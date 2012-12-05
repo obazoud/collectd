@@ -33,8 +33,7 @@
  * Largely taken from write_graphite.c as it remains the same formatting */
 
 static int gr_format_values (char *ret, size_t ret_len,
-        int ds_num, const data_set_t *ds, const value_list_t *vl,
-        gauge_t const *rates)
+        int ds_num, const data_set_t *ds, const value_list_t *vl)
 {
     size_t offset = 0;
     int status;
@@ -60,8 +59,6 @@ static int gr_format_values (char *ret, size_t ret_len,
 
     if (ds->ds[ds_num].type == DS_TYPE_GAUGE)
         BUFFER_ADD ("%f", vl->values[ds_num].gauge);
-    else if (rates != NULL)
-        BUFFER_ADD ("%f", rates[ds_num]);
     else if (ds->ds[ds_num].type == DS_TYPE_COUNTER)
         BUFFER_ADD ("%llu", vl->values[ds_num].counter);
     else if (ds->ds[ds_num].type == DS_TYPE_DERIVE)
@@ -168,16 +165,11 @@ static int gr_format_name (char *ret, int ret_len,
 
 int format_graphite (char *buffer, size_t buffer_size,
     const data_set_t *ds, const value_list_t *vl, char *prefix,
-    char *postfix, char escape_char,
-    _Bool store_rates)
+    char *postfix, char escape_char)
 {
     int status = 0;
     int i;
     int buffer_pos = 0;
-
-    gauge_t *rates = NULL;
-    if (store_rates)
-      rates = uc_get_rate (ds, vl);
 
     for (i = 0; i < ds->ds_num; i++)
     {
@@ -194,19 +186,17 @@ int format_graphite (char *buffer, size_t buffer_size,
                     prefix, postfix, escape_char);
         if (status != 0)
         {
-            ERROR ("format_graphite: error with gr_format_name");
-            sfree (rates);
+            ERROR ("amqp plugin: error with gr_format_name");
             return (status);
         }
 
         escape_string (key, sizeof (key));
         /* Convert the values to an ASCII representation and put that into
          * `values'. */
-        status = gr_format_values (values, sizeof (values), i, ds, vl, rates);
+        status = gr_format_values (values, sizeof (values), i, ds, vl);
         if (status != 0)
         {
             ERROR ("format_graphite: error with gr_format_values");
-            sfree (rates);
             return (status);
         }
 
@@ -219,7 +209,6 @@ int format_graphite (char *buffer, size_t buffer_size,
         if (message_len >= sizeof (message)) {
             ERROR ("format_graphite: message buffer too small: "
                     "Need %zu bytes.", message_len + 1);
-            sfree (rates);
             return (-ENOMEM);
         }
 
@@ -227,13 +216,11 @@ int format_graphite (char *buffer, size_t buffer_size,
         if ((buffer_pos + message_len) >= buffer_size)
         {
             ERROR ("format_graphite: target buffer too small");
-            sfree (rates);
             return (-ENOMEM);
         }
         memcpy((void *) (buffer + buffer_pos), message, message_len);
         buffer_pos += message_len;
     }
-    sfree (rates);
     return (status);
 } /* int format_graphite */
 
